@@ -598,7 +598,6 @@ void fetchSED_PySEDMODEL(int EXTERNAL_ID, int NEWEVT_FLAG, double Trest, int MXL
   // python declarations here  
   sprintf(pyfun_tmp, "fetchSED_%s", MODEL_NAME );
   pmeth  = PyObject_GetAttrString(geninit_PySEDMODEL, pyfun_tmp);
-
   // xxx  pmeth  = PyObject_GetAttrString(geninit_PySEDMODEL, 
   // xxx			  "fetchSED_BYOSED"); // .xyz
 
@@ -611,25 +610,29 @@ void fetchSED_PySEDMODEL(int EXTERNAL_ID, int NEWEVT_FLAG, double Trest, int MXL
   PyTuple_SetItem(pargs,1,PyFloat_FromDouble(MXLAM));
   PyTuple_SetItem(pargs,2,PyFloat_FromDouble(EXTERNAL_ID));
   PyTuple_SetItem(pargs,3,PyFloat_FromDouble(NEWEVT_FLAG));
+  
 
   for(ihost=0; ihost < sizeof(HOSTPAR_LIST); ihost++ ){
     PyTuple_SetItem(pargs2,ihost,PyFloat_FromDouble(HOSTPAR_LIST[ihost]));
   }
+  
 
   PyTuple_SetItem(pargs,4,pargs2);
   pNLAM  = PyEval_CallObject(pnlammeth, NULL);
   pLAM  = PyEval_CallObject(plammeth, NULL);
   pFLUX   = PyEval_CallObject(pmeth, pargs);
-  
-  Py_DECREF(pmeth);
-  Py_DECREF(plammeth);
-  Py_DECREF(pnlammeth);
+
+
+  Py_XDECREF(pmeth);
+  Py_XDECREF(plammeth);
+  Py_XDECREF(pnlammeth);
 
   NLAM = PyFloat_AsDouble(pNLAM);
-  Py_DECREF(pNLAM);
+  Py_XDECREF(pNLAM);
   
   arrLAM  = (PyListObject *)(pLAM);
   arrFLUX = (PyListObject *)(pFLUX);
+
   for(ilam=0; ilam < NLAM; ilam++ ) {
     // interpolate flux to Trest
     pylamitem  = PyList_GetItem(arrLAM,ilam);
@@ -638,17 +641,24 @@ void fetchSED_PySEDMODEL(int EXTERNAL_ID, int NEWEVT_FLAG, double Trest, int MXL
     LAM_SED[ilam]  = PyFloat_AsDouble(pylamitem);
     FLUX_SED[ilam] = PyFloat_AsDouble(pyfluxitem);
   }
+  printf("XXX 1 DEBUG\n");
 
   *NLAM_SED = NLAM;
-  
-  Py_DECREF(pLAM);
-  Py_DECREF(pFLUX);
-  Py_DECREF(arrLAM);
-  Py_DECREF(arrFLUX);
-  Py_DECREF(pargs);
-  Py_DECREF(pargs2);
-  //Py_DECREF(pylamitem);
-  //Py_DECREF(pyfluxitem);
+  printf("XXX 2 DEBUG\n");
+  Py_XDECREF(pLAM);
+  printf("XXX 3 DEBUG\n");
+  Py_XDECREF(pFLUX);
+  printf("XXX 4 DEBUG\n");
+  Py_XDECREF(arrLAM);
+  printf("XXX 5 DEBUG\n");
+  Py_XDECREF(arrFLUX);
+  printf("XXX 6 DEBUG\n");
+  Py_XDECREF(pargs);
+  printf("XXX 7 DEBUG\n");
+  Py_XDECREF(pargs2);
+  printf("XXX 8 DEBUG\n");
+  //Py_XDECREF(pylamitem);
+  //Py_XDECREF(pyfluxitem);
 
 #endif
 
