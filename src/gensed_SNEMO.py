@@ -101,6 +101,8 @@ class gensed_SNEMO:
     # Settings
     verbose: int or bool
         Internal status reflecting options, regarding amount of output, given to SNANA.
+    SNANA_RANSEED: int
+        A copy of SNANA's RANSEED value. Obtained via ARGLIST.
 
     dump
         CURRENTLY UNUSED. Internal status reflecting options given to SNANA.
@@ -159,6 +161,24 @@ class gensed_SNEMO:
             self.verbose = OPTMASK & (1 << mask_bit_locations["verbose"]) > 0
             self.verbose = True
             self.dump = OPTMASK & (1 << mask_bit_locations["dump"]) > 0
+
+            try:
+                # split comman separated key value pairs.
+                # search for key "RANSEED" in list
+                # exctract RASEED integer
+                self.SNANA_RANSEED = [
+                    int(arg.split()[1])
+                    for arg in ARGLIST.split(",")
+                    if "RANSEED" in arg
+                ][0]
+            except IndexError:
+                # if ranseed is not given
+                if self.verbose:
+                    print("No RANSEED found.", flush=True)
+                self.SNANA_RANSEED = 100
+            if self.verbose:
+                print("Random seed set to ", self.SNANA_RANSEED, flush=True)
+            np.random.seed(self.SNANA_RANSEED)
 
             self.host_param_names = [x.upper() for x in HOST_PARAM_NAMES.split(",")]
 
