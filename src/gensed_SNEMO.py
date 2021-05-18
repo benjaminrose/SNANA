@@ -3,25 +3,47 @@
 Written by Benjamin Rose, benjamin.rose@duke.edu
 Fall 2020 through Spring 2021.
 
-Developed with: 
-* Python 3.7.8
-* sklearn 0.23.2
-* available in /project2/rkessler/PRODUCTS/miniconda/envs/snemo
+
+Developed with (available in /project2/rkessler/PRODUCTS/miniconda/envs/snemo): 
+
+* Python 3.7.8 &
+* sklearn 0.23.2 (picked KDE models were made with 0.21.2)
+
+
+Science definitions:
+
+SNANA-restframe
+    SED should have restframe wavelegnth, with flux values in absolute magnitude.
+    This can be achieved by setting SNEMO's c0 (related to apprent magnitude) when
+    the model is at 10 pc.
+SNFactory-restframe
+    SNFactroy treats z=0.05 as restframe. This results in SNEMO's c0 having a
+    range within (10^{-13}--10^{-17}).
+expected scatter
+    KDE was trained on a data set with SALT fit M_B scatter of 0.464 mag and
+    SENEMO15 M_B scatter of 0.435 mag. Current sims (with only SNEMO scatter)
+    result in a 0.56 mag scatter.
+
 
 Built on top of: 
-BOYSED Paper - https://ui.adsabs.harvard.edu/abs/2020arXiv201207811P/abstract
-BOYSED Docs - https://byosed.readthedocs.io/en/latest/
-SNEMO paper - https://ui.adsabs.harvard.edu/abs/2018ApJ...869..167S/abstract
-SNEMO parameter distributions paper - Dixon 2021, Dissertation Ch. 4 - Contact Sam Dixon or Ben Rose
+
+* BOYSED Paper - https://ui.adsabs.harvard.edu/abs/2020arXiv201207811P/abstract
+* BOYSED Docs - https://byosed.readthedocs.io/en/latest/
+* SNEMO paper - https://ui.adsabs.harvard.edu/abs/2018ApJ...869..167S/abstract
+* SNEMO parameter distributions paper - Dixon 2021, Dissertation Ch. 4 - Contact Sam Dixon or Ben Rose
 
 Dev tips:
+
 * Need to flush stdout to work with batch jobs/slurm, `print(..., flush=True)`.
 
+
 TODO list:
-- [ ] document params file
+
+- [ ] publicly document params file
 - [ ] can I make params file optional?
 - [ ] find a default home for the KDE files on Midway
 - [ ] find a way to get SNEMO model name into SNANA metadata.
+- [ ] add ability to use SNEMO-extened.
 """
 
 import sys
@@ -159,7 +181,6 @@ class gensed_SNEMO:
 
             # Process SNANA options bit flags.
             self.verbose = OPTMASK & (1 << mask_bit_locations["verbose"]) > 0
-            self.verbose = True
             self.dump = OPTMASK & (1 << mask_bit_locations["dump"]) > 0
 
             try:
@@ -200,7 +221,16 @@ class gensed_SNEMO:
 
             # Setup SNEMO & SNCOSMO
             #######################
+            # TODO: should `in [2, 7, 15]` be integers or strings?
             if self.params_file_contents["SNEMO_model"] in [2, 7, 15]:
+                # TODO
+                # Allow for Hsiao template wavelength extensions via:
+                # if self.params_file_contents["EXT"] == "True":
+                #    snemo_source = sncosmo.models.SNEMOSource('location_to_extended_models/ext_snemo15.dat')
+                #    snemo_ext = sncosmo.Model(source=snemo_source)
+                # else: # what is presently here.
+                # This should not be the default model, since it extends the model to 1,000-20,000AA but
+                # all variability is still only from 3500-8400AA.
                 source_name = "snemo{}".format(self.params_file_contents["SNEMO_model"])
                 self.model = sncosmo.Model(source=source_name)
                 if self.verbose:
@@ -289,8 +319,10 @@ class gensed_SNEMO:
 
         Returns
         -------
-        A list of length self.wavelen containing the flux at
-        every wavelength in self.wave, at the phase trest
+        A list of length self.wavelen containing the flux at every wavelength
+        in self.wave, at the phase trest. Flux values should be restframe
+        absolute magnitude (specifically rest frame wavelengths but 10 pc
+        apprent mag).
         """
 
         try:
@@ -317,8 +349,6 @@ class gensed_SNEMO:
             # Get flux
             ##########
             try:
-                # skipping cache, to test a bug
-                raise KeyError
                 # Check cache first
                 # Read docs for `_update_cache()` for why we are using a cache
                 flux_at_all_wavelengths_for_trest = self.cache[
@@ -390,19 +420,33 @@ class gensed_SNEMO:
             # the default KDE is detla-MB, As, c1, .... self.parameter_names has c0 not MB.
             kde_param_names = ["MB", *self.model.source.param_names[1:]]
 
+            # Initial KDEs by Sam Dixon use an SNFactory data set. MB (or more
+            # precisely MB + 19.1) has a KDE training data set scatter of
+            # ~0.44 mag. The SALT2 fits for the training SNe have a scatter of ~0.46 mag.
+
             # if KDE is givin in MB, use SNCosmo to convert to c0: then update self.paramer_values
-            # need to copy, but temp_model.set() is leaking back to original
+            # need to copy, but temp_model.set() can leak back to original
             temp_model = copy.copy(self.model)
             # Set all the parameters sampled above in the temp model.
             # Don't set SNCosmo's c0, since KDE has delta-MB.
             temp_model.set(**dict(zip(kde_param_names[1:], samples[0, 1:])))
             # use `model.set_source_peakabsmag` to go from KDE M_B to SNCosmo c0.
             # `set_source_peakabsmag:`` 'absolute magnitude undefined when z<=0.'
-            # set z to 10 pc. Magic SNCosmo number.
-            temp_model.set(z=0.000000002369)  # needs to be >10 parsecs
+            # set z to 10 pc, where we can use absolute mag to set apparent
+            # mag (~log(c0)) and be SNANA-restframe.
+            # SNFactory uses z=0.05 as their "restframe". With the
+            # SNFacotry-restframe, we get the expected c0 range (10^{-13}--10^{-17}).
+            # This number is defined described in "NOTE 1" at end of file
+            temp_model.set(z=0.000000002369)
             # NOTE: -19.1 is semi-arbitrary, it centers MB around 0.
             # It is a convention of the KDE, nothing more.
             # KDE M_B is actually a delta-M_B (ie M_B + 19.1)
+            # print(
+            #     "\nWARNING! Not setting M_B scatter! Setting all SN to be similar.\n",
+            #     flush=True,
+            # )  # undo by remove next line
+            # MB191 = np.random.randn(1) * 0.00001
+            # temp_model.set_source_peakabsmag(MB191 - 19.1, "bessellb", "ab")
             temp_model.set_source_peakabsmag(samples[0, 0] - 19.1, "bessellb", "ab")
             if self.verbose:
                 # Need to flush stdout to work with batch jobs/slurm
@@ -560,3 +604,23 @@ if __name__ == "__main__":
     )
     # Test locally
     # mySED = gensed_SNEMO("./data/", 2, [], "z,AGE,ZCMB,METALLICITY")
+
+
+# NOTE 1
+# >>> import astropy.units as u
+# >>> from astropy.cosmology import FlatLambdaCDM, z_at_value,
+#  File "<stdin>", line 1
+#    from astropy.cosmology import FlatLambdaCDM, z_at_value,
+#                                                             ^
+# SyntaxError: trailing comma not allowed without surrounding parentheses
+# >>> from astropy.cosmology import FlatLambdaCDM, z_at_value
+# >>> cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
+# >>> z_at_value(cosmo.luminosity_distance, 10*u.pc, zmin=1e-12)
+# Traceback (most recent call last):
+#  File "<stdin>", line 1, in <module>
+#  File "/Users/benrose/miniconda3/envs/sci/lib/python3.9/site-packages/astropy/cosmology/funcs.py", line 143, in z_at_value
+#    raise CosmologyError("Best guess z is very close the lower z limit.\n"
+# astropy.cosmology.core.CosmologyError: Best guess z is very close the lower z limit.
+# Try re-running with a different zmin.
+# >>> cosmo.luminosity_distance(0.000000002369).to(u.pc)
+# <Quantity 10.14583355 pc>
